@@ -8,12 +8,14 @@ import java.util.HashMap;
 public class BoltInfo {
     public String componentName;
     public String nameOfClassLoadedInside;
-    public String hostName = "none";
+    public String supervisorNameForTCPConnection="none";
+    public String hostName="none";
     public double cpu = 0;
+    public float cpuAtBoltLevel= 0.0F;
     public double throughput = 0;
-    public int taskId = 0;
+    public int taskId=0;
     //it varies for different upstream bolts
-    public int serverPort = 0;
+    public int serverPort=0;
 
 
     @Override
@@ -21,12 +23,29 @@ public class BoltInfo {
         return "BoltInfo{" +
                 "componentName='" + componentName + '\'' +
                 ", nameOfClassLoadedInside='" + nameOfClassLoadedInside + '\'' +
+                ", supervisorNameForTCPConnection='" + supervisorNameForTCPConnection + '\'' +
                 ", hostName='" + hostName + '\'' +
                 ", cpu=" + cpu +
+                ", cpuAtBoltLevel=" + cpuAtBoltLevel +
                 ", throughput=" + throughput +
                 ", taskId=" + taskId +
                 ", serverPort=" + serverPort +
                 '}';
+    }
+
+    public float getCpuAtBoltLevel() {
+        return cpuAtBoltLevel;
+    }
+
+    public void setCpuAtBoltLevel(float cpuAtBoltLevel) {
+        this.cpuAtBoltLevel = cpuAtBoltLevel;
+    }
+    public String getSupervisorNameForTCPConnection() {
+        return supervisorNameForTCPConnection;
+    }
+
+    public void setSupervisorNameForTCPConnection(String supervisorNameForTCPConnection) {
+        this.supervisorNameForTCPConnection = supervisorNameForTCPConnection;
     }
 
     public String getHostName() {

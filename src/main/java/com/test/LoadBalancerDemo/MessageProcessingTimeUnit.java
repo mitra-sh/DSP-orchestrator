@@ -1,8 +1,16 @@
 package com.test.LoadBalancerDemo;
 
 public class MessageProcessingTimeUnit {
-    public long startingTime;
-    public long executionTime;
+    public Long startingTime;
+    public Long endTime;
+    public Long executionTime;
+    public MessageProcessingTimeUnit(Long startingTime) {
+        this.startingTime = startingTime;
+    }
+    public MessageProcessingTimeUnit() {
+
+    }
+
 
     @Override
     public String toString() {
@@ -10,23 +18,27 @@ public class MessageProcessingTimeUnit {
                 ", executionTime=" + executionTime+" ms";
     }
 
-    public MessageProcessingTimeUnit(long startingTime) {
-        this.startingTime = startingTime;
+    public Long getEndTime() {
+        return endTime;
     }
 
-    public long getStartingTime() {
+    public void setEndTime(Long endTime) {
+        this.endTime = endTime;
+    }
+
+    public Long getStartingTime() {
         return startingTime;
     }
 
-    public void setStartingTime(long startingTime) {
+    public void setStartingTime(Long startingTime) {
         this.startingTime = startingTime;
     }
 
-    public long getExecutionTime() {
+    public Long getExecutionTime() {
         return executionTime;
     }
 
-    public void setExecutionTime(long executionTime) {
+    public void setExecutionTime(Long executionTime) {
         this.executionTime = executionTime;
     }
 

@@ -22,15 +22,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class LoadBalancer {
+    private final String filePath = "message_processing_times.csv";
     public IMqttClient mqttClient;
     public IMqttClient mqttClientForPorts;
     public IMqttClient mqttClientForGBs;
     public IMqttClient messagePublisher;
     public IMqttClient startTimeListener;
     public IMqttClient endTimeListener;
-
     public HashMap<String, BoltInfo> boltRecords;
     //the key is bolt name and the value is name of all DS bolts
     public HashMap<String, List<String>> topology;
@@ -42,10 +44,10 @@ public class LoadBalancer {
     public HashMap<String, BoltLatencyDetails> latencyRecordsFromDownStreamBolts;
     public HashMap<String, List<Integer>> listOfFreeServerPorts;
     public HashMap<String, MessageProcessingTimeUnit> messageProcessingTime;
-
     public List<LatencyInfo> latencyInfoList;
     public ExecutorService executorService;
-
+    public BufferedWriter writer;
+    private static final int MAX_RECORDS_PER_FLUSH = 100;
 
     public LoadBalancer() {
         boltRecords = new HashMap<String, BoltInfo>();
@@ -57,8 +59,62 @@ public class LoadBalancer {
         listOfFreeServerPorts = new HashMap<String, List<Integer>>();
         loadLatencyFile();
         executorService = Executors.newFixedThreadPool(10);
-        messageProcessingTime=new HashMap<String, MessageProcessingTimeUnit>();
+        messageProcessingTime = new HashMap<String, MessageProcessingTimeUnit>();
+        initializeWriter();
+
+        // Write the header to the file
+        try {
+            writer.write("MessageID,StartTime,ExecutionTime\n");
+            writer.flush();  // Ensure the header is written out immediately
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        // Schedule periodic flushing of the HashMap to the file
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(this::flushDataToFile, 1, 1, TimeUnit.MINUTES);
     }
+    private void initializeWriter() {
+        try {
+            this.writer = new BufferedWriter(new FileWriter(filePath, true));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void flushDataToFile() {
+        try {
+            int recordsProcessed = 0;
+            Iterator<Map.Entry<String, MessageProcessingTimeUnit>> iterator = messageProcessingTime.entrySet().iterator();
+
+            while (iterator.hasNext() && recordsProcessed < MAX_RECORDS_PER_FLUSH) {
+                Map.Entry<String, MessageProcessingTimeUnit> entry = iterator.next();
+                String messageId = entry.getKey();
+                MessageProcessingTimeUnit unit = entry.getValue();
+
+                // Write to file only if execution time is set
+                if (unit.getExecutionTime() != null) {
+                    writer.write(messageId + "," + unit.getStartingTime() + "," + unit.getExecutionTime() + "\n");
+                    iterator.remove();  // Safely remove the entry
+                    recordsProcessed++;
+                } else {
+                    if (unit.getStartingTime() != null && unit.getEndTime() != null) {
+                        Long executionTime = unit.getEndTime() - unit.getStartingTime();
+                        unit.setExecutionTime(executionTime);
+                        writer.write(messageId + "," + unit.getStartingTime() + "," + unit.getExecutionTime() + "\n");
+                        iterator.remove();  // Safely remove the entry
+                        recordsProcessed++;
+                    }
+                }
+            }
+            writer.flush();  // Ensure all data is written out immediately
+            System.out.println("the data is just written to the file");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+
 
     public void connectToBroker() {
         //create a new IMqttClient synchronous instance:
@@ -132,14 +188,16 @@ public class LoadBalancer {
             public void messageArrived(String topic, MqttMessage message) throws Exception {
                 String messagePayload = new String(message.getPayload());
                 System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
-                long startTime;
+                Long startTime;
                 if (topic.endsWith("/processingTime/start")) {
-                    if (topic.startsWith("spout")) {
-                        String[] parts = messagePayload.split("/");
-                        String messageId = parts[0];
-                        startTime = Long.parseLong(parts[1]);
-                        System.out.println("messageId= " + messageId + ", startTime"+ startTime);
+                    String[] parts = messagePayload.split("/");
+                    String messageId = parts[0];
+                    startTime = Long.parseLong(parts[1]);
+                    // System.out.println("messageId= " + messageId + ", startTime"+ startTime);
+                    if (!messageProcessingTime.containsKey(messageId)) {
                         messageProcessingTime.put(messageId, new MessageProcessingTimeUnit(startTime));
+                    } else {
+                        messageProcessingTime.get(messageId).setEndTime(startTime);
                     }
                 }
             }
@@ -170,17 +228,27 @@ public class LoadBalancer {
             public void messageArrived(String topic, MqttMessage message) {
                 String messagePayload = new String(message.getPayload());
                 System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
-                long endTime;
-                long executionTIme;
+                Long endTime;
+                Long executionTIme;
                 if (topic.endsWith("/processingTime/end")) {
                     if (topic.startsWith("sink")) {
                         String[] parts = messagePayload.split("/");
                         String messageId = parts[0];
                         endTime = Long.parseLong(parts[1]);
+
                         //the duration is in millisecond
-                        executionTIme = endTime - (messageProcessingTime.get(messageId).getStartingTime());
-                        messageProcessingTime.get(messageId).setExecutionTime(executionTIme);
-                        System.out.println("messageId= "+messageId+", value part ="+messageProcessingTime.get(messageId));
+                        if (messageProcessingTime.containsKey(messageId)) {
+                            executionTIme = endTime - (messageProcessingTime.get(messageId).getStartingTime());
+                            messageProcessingTime.get(messageId).setExecutionTime(executionTIme);
+                            messageProcessingTime.get(messageId).setEndTime(endTime);
+
+                            //System.out.println("messageId= "+messageId+", value part ="+messageProcessingTime.get(messageId));
+                        } else {
+                            MessageProcessingTimeUnit messageProcessingTimeUnit = new MessageProcessingTimeUnit();
+                            messageProcessingTimeUnit.setEndTime(endTime);
+                            messageProcessingTime.put(messageId, messageProcessingTimeUnit);
+
+                        }
                     }
                 }
             }
@@ -366,8 +434,9 @@ public class LoadBalancer {
                         }
                     }
 
-                } else if (topic.equals("underUtilization")) {
-                    if (topology.containsKey(messagePayload)) {
+                }
+                else if (topic.equals("underUtilization")) {
+                  /*  if (topology.containsKey(messagePayload)) {
                         System.out.println("just to test, " + boltRecords.get(messagePayload).getNameOfClassLoadedInside());
                         List<String> listOfAllBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(messagePayload);
                         System.out.println("listOfAllBoltsWithSameFunctionality= " + listOfAllBoltsWithSameFunctionality.toString());
@@ -382,6 +451,8 @@ public class LoadBalancer {
                             removeAReplica(new RequestToRemoveReplica(findNameOfOriginalBoltByReplicaName(nameOfReplicaToBeDeleted), nameOfReplicaToBeDeleted));
                         }
                     }
+
+                   */
                 }
             }
 
@@ -475,8 +546,11 @@ public class LoadBalancer {
     }
 
     public double findLatenciesBetweenBolts(String boltName1, String boltName2) {
+        String hostName1 = boltRecords.get(boltName1).getHostName();
+        String hostName2 = boltRecords.get(boltName2).getHostName();
         for (LatencyInfo latencyInfo : latencyInfoList) {
-            if ((latencyInfo.source.equals(boltName1) && latencyInfo.dest.equals(boltName2)) || (latencyInfo.source.equals(boltName2) && latencyInfo.dest.equals(boltName1))) {
+            if ((latencyInfo.source.equals(hostName1) && latencyInfo.dest.equals(hostName2)) ||
+                    (latencyInfo.source.equals(hostName2) && latencyInfo.dest.equals(hostName1))) {
                 return latencyInfo.latency;
             }
         }

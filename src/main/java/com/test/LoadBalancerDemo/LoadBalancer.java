@@ -3,9 +3,8 @@ package com.test.LoadBalancerDemo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.test.LoadBalancerDemo.boltDetails.LatencyInfo;
+import com.test.LoadBalancerDemo.boltDetails.*;
 import com.test.LoadBalancerDemo.metrics.BoltLatencyDetails;
-import com.test.LoadBalancerDemo.boltDetails.BoltInfo;
 import com.test.LoadBalancerDemo.configs.ApplicationSettings;
 import com.test.LoadBalancerDemo.metrics.CandidateEvaluationMetrics;
 import com.test.LoadBalancerDemo.requests.RequestToAddAReplica;
@@ -26,6 +25,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class LoadBalancer {
+    private static final int MAX_RECORDS_PER_FLUSH = 100;
     private final String filePath = "message_processing_times.csv";
     public IMqttClient mqttClient;
     public IMqttClient mqttClientForPorts;
@@ -45,9 +45,13 @@ public class LoadBalancer {
     public HashMap<String, List<Integer>> listOfFreeServerPorts;
     public HashMap<String, MessageProcessingTimeUnit> messageProcessingTime;
     public List<LatencyInfo> latencyInfoList;
+    public HashMap<String, BandwidthInfo> bandwidthTable;
     public ExecutorService executorService;
     public BufferedWriter writer;
-    private static final int MAX_RECORDS_PER_FLUSH = 100;
+    public HashMap<String, RemainingBandwidthInfoOfVm> tableOfRemainingBandwidthOfVms;
+    public ExecutorService threadPool;
+    int metricPrecision = (int) Math.pow(10, 3); // 10^3 for 3 decimal places
+
 
     public LoadBalancer() {
         boltRecords = new HashMap<String, BoltInfo>();
@@ -62,6 +66,7 @@ public class LoadBalancer {
         messageProcessingTime = new HashMap<String, MessageProcessingTimeUnit>();
         initializeWriter();
 
+
         // Write the header to the file
         try {
             writer.write("MessageID,StartTime,ExecutionTime\n");
@@ -72,7 +77,52 @@ public class LoadBalancer {
         // Schedule periodic flushing of the HashMap to the file
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleAtFixedRate(this::flushDataToFile, 1, 1, TimeUnit.MINUTES);
+
+        //read bandwidth file
+        loadEdgeDeviceBandwidthInfo();
+        threadPool = Executors.newFixedThreadPool(20);
     }
+
+    public void manageReplicaCreationBasedOnRemainingInBandwidth(String hostName) {
+        //   threadPool.submit(() -> {
+        System.out.println("there is a bottleNeck in terms of in_bandwidth in vm = " + hostName);
+        String nameOfResourceIntensiveBolt = findBoltWithHighestInBandwidthUsage(hostName);
+        System.out.println("name Of resource intensive bolt: " + nameOfResourceIntensiveBolt);
+
+        boolean result = isAverageRemainingInBandwidthBelowThreshold(nameOfResourceIntensiveBolt);
+        System.out.println("isAverageRemainingInBandwidthBelowThreshold returns " + result);
+        if (result) {
+            createReplicaBasedOnBestCandidate(nameOfResourceIntensiveBolt);
+        }
+        //      });
+
+    }
+
+    public void manageReplicaCreationBasedOnRemainingOutBandwidth(String hostName) {
+        System.out.println("there is a bottleNeck in terms of out_bandwidth in vm = " + hostName);
+        String nameOfResourceIntensiveBolt = findBoltWithHighestOutBandwidthUsage(hostName);
+        System.out.println("name Of resource intensive bolt: " + nameOfResourceIntensiveBolt);
+
+        boolean result = isAverageRemainingOutBandwidthBelowThreshold(nameOfResourceIntensiveBolt);
+        System.out.println("isAverageRemainingOutBandwidthBelowThreshold returns " + result);
+        if (result) {
+            createReplicaBasedOnBestCandidate(nameOfResourceIntensiveBolt);
+        }
+    }
+
+    public void createReplicaBasedOnBestCandidate(String nameOfResourceIntensiveBolt) {
+        HashMap<String, CandidateEvaluationMetrics> listOfAllCandidates = identifyCandidatesForSpanningAReplica(nameOfResourceIntensiveBolt);
+        if (listOfAllCandidates != null && listOfAllCandidates.size() > 0) {
+            String chosenBoltToBeAReplica = calculateScoreForAllCandidatesAndSelectTheBestCandidate(listOfAllCandidates);
+            String originalBolName = findOriginalBoltNameRelatedToAComponentName(nameOfResourceIntensiveBolt);
+            addANewReplica(new RequestToAddAReplica(boltRecords.get(nameOfResourceIntensiveBolt).getNameOfClassLoadedInside(),
+                    chosenBoltToBeAReplica, originalBolName));
+        } else {
+            System.out.println("there is no candidate");
+        }
+    }
+
+
     private void initializeWriter() {
         try {
             this.writer = new BufferedWriter(new FileWriter(filePath, true));
@@ -114,8 +164,6 @@ public class LoadBalancer {
     }
 
 
-
-
     public void connectToBroker() {
         //create a new IMqttClient synchronous instance:
         //The server endpoint we're using is a public MQTT broker hosted
@@ -125,14 +173,6 @@ public class LoadBalancer {
         System.out.println("load balancer is connecting to the broker");
 
         try {
-          /*  mqttClient = new MqttClient("tcp://localhost:1883", "LoadBalancer");
-            mqttClientForPorts = new MqttClient("tcp://localhost:1883", "LoadBalancer2");
-            mqttClientForGBs = new MqttClient("tcp://localhost:1883", "LoadBalancer3");
-            messagePublisher = new MqttClient("tcp://localhost:1883", "LoadBalancer4");
-            startTimeListener = new MqttClient("tcp://localhost:1883", "LoadBalancer5");
-            endTimeListener = new MqttClient("tcp://localhost:1883", "LoadBalancer6");
-
-           */
             mqttClient = new MqttClient("tcp://192.168.122.98:1883", "LoadBalancer");
             mqttClientForPorts = new MqttClient("tcp://192.168.122.98:1883", "LoadBalancer2");
             mqttClientForGBs = new MqttClient("tcp://192.168.122.98:1883", "LoadBalancer3");
@@ -185,9 +225,9 @@ public class LoadBalancer {
             }
 
             @Override
-            public void messageArrived(String topic, MqttMessage message) throws Exception {
+            public void messageArrived(String topic, MqttMessage message) {
                 String messagePayload = new String(message.getPayload());
-                System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
+                //   System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
                 Long startTime;
                 if (topic.endsWith("/processingTime/start")) {
                     String[] parts = messagePayload.split("/");
@@ -227,7 +267,7 @@ public class LoadBalancer {
             @Override
             public void messageArrived(String topic, MqttMessage message) {
                 String messagePayload = new String(message.getPayload());
-                System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
+                //  System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
                 Long endTime;
                 Long executionTIme;
                 if (topic.endsWith("/processingTime/end")) {
@@ -244,6 +284,7 @@ public class LoadBalancer {
 
                             //System.out.println("messageId= "+messageId+", value part ="+messageProcessingTime.get(messageId));
                         } else {
+
                             MessageProcessingTimeUnit messageProcessingTimeUnit = new MessageProcessingTimeUnit();
                             messageProcessingTimeUnit.setEndTime(endTime);
                             messageProcessingTime.put(messageId, messageProcessingTimeUnit);
@@ -277,7 +318,7 @@ public class LoadBalancer {
             }
 
             @Override
-            public void messageArrived(String topic, MqttMessage message) throws Exception {
+            public void messageArrived(String topic, MqttMessage message) {
                 String messagePayload = new String(message.getPayload());
                 System.out.println("A message for /classLoaded arrived: " + messagePayload);
                 if (topic.endsWith("/classLoaded")) {
@@ -364,7 +405,7 @@ public class LoadBalancer {
             public void messageArrived(String topic, MqttMessage mqttMessage) {
                 String messagePayload = mqttMessage.toString();
                 System.out.println("A message arrived with the topic = " + topic + " and the payload is " + messagePayload);
-                if (topic.endsWith("metrics")) {
+                if (topic.endsWith("initialInfo")) {
 
                     BoltInfo updatedBoltInfo = new BoltInfo();
                     try {
@@ -372,12 +413,27 @@ public class LoadBalancer {
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException(e);
                     }
-                    if (boltRecords == null || !boltRecords.containsKey(updatedBoltInfo.getComponentName())) {
-                        boltRecords.put(updatedBoltInfo.getComponentName(), updatedBoltInfo);
-                    } else {
-                        boltRecords.get(updatedBoltInfo.getComponentName()).setThroughput(updatedBoltInfo.getThroughput());
-                        boltRecords.get(updatedBoltInfo.getComponentName()).setCpu(updatedBoltInfo.getCpu());
+                    boltRecords.put(updatedBoltInfo.getComponentName(), updatedBoltInfo);
+                }
+                else if (topic.endsWith("metrics")) {
+
+                    Metrics metrics = new Metrics();
+                    int index = topic.indexOf('/');
+                    String componentName = null;
+                    if (index != -1) {
+                        componentName = topic.substring(0, index);
                     }
+                    try {
+                        metrics = objectMapper.readValue(messagePayload, Metrics.class);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+                    boltRecords.get(componentName).getMetrics().setCpu(metrics.getCpu());
+                    boltRecords.get(componentName).getMetrics().setCpuAtBoltLevel(metrics.getCpuAtBoltLevel());
+                    boltRecords.get(componentName).getMetrics().setIn_throughput(metrics.getIn_throughput());
+                    boltRecords.get(componentName).getMetrics().setOut_throughput(metrics.getOut_throughput());
+                    //System.out.println("after updating metrics of "+componentName+" , new metrics are= " +boltRecords.get(componentName).getMetrics());
+
 
                 }
                 else if (topic.endsWith("topologyUpdate")) {
@@ -402,42 +458,19 @@ public class LoadBalancer {
                     }
                 }
                 else if (topic.equals("bottleNeck/CPU")) {
-                    boolean result = checkIfANewReplicaIsRequired_CPUFocused(messagePayload);
-                    System.out.println("checkIfANewReplicaIsRequired returns " + result);
-                    if (result) {
-                        String nameOfBusyBolt = messagePayload;
-                        HashMap<String, CandidateEvaluationMetrics> listOfAllCandidates = identifyCandidatesForSpanningAReplica(nameOfBusyBolt);
-                        if (listOfAllCandidates != null && listOfAllCandidates.size() > 0) {
-                            String chosenBoltToBeAReplica = calculateScoreForAllCandidatesAndSelectTheBestCandidate(listOfAllCandidates);
-                            String originalBolName = findOriginalBoltNameRelatedToAComponentName(nameOfBusyBolt);
-                            RequestToAddAReplica requestToAddAReplica = new RequestToAddAReplica(boltRecords.get(originalBolName).getNameOfClassLoadedInside(),
-                                    chosenBoltToBeAReplica, originalBolName);
-                            System.out.println(requestToAddAReplica);
-                            addANewReplica(new RequestToAddAReplica(boltRecords.get(nameOfBusyBolt).getNameOfClassLoadedInside(), chosenBoltToBeAReplica, originalBolName));
-                        } else {
-                            System.out.println("there is no candidate");
+
+                    String nameOfResourceIntensiveBolt = identifyCPUIntensiveBolt(messagePayload);
+                    System.out.println("name Of resource intensive bolt: " + nameOfResourceIntensiveBolt);
+                    if (nameOfResourceIntensiveBolt != null) {
+                        boolean result = isAverageCPUAboveThreshold(nameOfResourceIntensiveBolt);
+                        System.out.println("checkIfANewReplicaIsRequired returns " + result);
+                        if (result) {
+                            createReplicaBasedOnBestCandidate(nameOfResourceIntensiveBolt);
                         }
                     }
 
-                } else if (topic.equals("bottleNeck/throughput")) {
-                    boolean result = checkIfANewReplicaIsRequired_throughputFocused(messagePayload);
-                    System.out.println("checkIfANewReplicaIsRequired returns " + result);
-                    if (result) {
-                        HashMap<String, CandidateEvaluationMetrics> listOfAllCandidates = identifyCandidatesForSpanningAReplica(messagePayload);
-                        if (listOfAllCandidates != null && listOfAllCandidates.size() > 0) {
-                            String chosenBoltToBeAReplica = calculateScoreForAllCandidatesAndSelectTheBestCandidate(listOfAllCandidates);
-                            String originalBolName = findOriginalBoltNameRelatedToAComponentName(messagePayload);
-                            addANewReplica(new RequestToAddAReplica(boltRecords.get(messagePayload).getNameOfClassLoadedInside(),
-                                    chosenBoltToBeAReplica, originalBolName));
-                        } else {
-                            System.out.println("there is no candidate");
-                        }
-                    }
-
-                }
-                else if (topic.equals("underUtilization")) {
-                  /*  if (topology.containsKey(messagePayload)) {
-                        System.out.println("just to test, " + boltRecords.get(messagePayload).getNameOfClassLoadedInside());
+                } else if (topic.equals("underUtilization")) {
+                    if (topology.containsKey(messagePayload)) {
                         List<String> listOfAllBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(messagePayload);
                         System.out.println("listOfAllBoltsWithSameFunctionality= " + listOfAllBoltsWithSameFunctionality.toString());
                         String nameOfBoltToBeDeleted = null;
@@ -451,8 +484,6 @@ public class LoadBalancer {
                             removeAReplica(new RequestToRemoveReplica(findNameOfOriginalBoltByReplicaName(nameOfReplicaToBeDeleted), nameOfReplicaToBeDeleted));
                         }
                     }
-
-                   */
                 }
             }
 
@@ -469,8 +500,75 @@ public class LoadBalancer {
 
     }
 
+    public String identifyCPUIntensiveBolt(String hostName) {
+        List<BoltInfo> boltsOnSameNode = getBoltsRunningOnHost(hostName);
+        if (boltsOnSameNode != null) {
+            float maxCPUUsagePercentageAtBoltLevel = 0.0F;
+            String boltName = null;
+            for (BoltInfo bolt : boltsOnSameNode) {
+                if (bolt.getMetrics().getCpuAtBoltLevel() >= maxCPUUsagePercentageAtBoltLevel && !bolt.getComponentName().startsWith("s")) {
+                    if (bolt.getNameOfClassLoadedInside().equals("none")) {
+                        continue;
+                    }
+                    maxCPUUsagePercentageAtBoltLevel = bolt.getMetrics().getCpuAtBoltLevel();
+                    boltName = bolt.getComponentName();
+                }
+            }
+            return boltName;
+        } else return null;
+    }
+
+    public String findBoltWithHighestInBandwidthUsage(String hostName) {
+        List<BoltInfo> boltsOnSameNode = getBoltsRunningOnHost(hostName);
+        if (boltsOnSameNode != null) {
+            float maxInThroughPutPercentageAtBoltLevel = 0.0F;
+            String boltName = null;
+            for (BoltInfo bolt : boltsOnSameNode) {
+                if (bolt.getNameOfClassLoadedInside().equals("none")) {
+                    continue;
+                }
+                if (bolt.getMetrics().getIn_throughput() >= maxInThroughPutPercentageAtBoltLevel) {
+                    maxInThroughPutPercentageAtBoltLevel = bolt.getMetrics().getIn_throughput();
+                    boltName = bolt.getComponentName();
+                }
+            }
+            return boltName;
+        } else return null;
+    }
+
+    public String findBoltWithHighestOutBandwidthUsage(String hostName) {
+        List<BoltInfo> boltsOnSameNode = getBoltsRunningOnHost(hostName);
+        if (boltsOnSameNode != null) {
+            float maxOutThroughPutPercentageAtBoltLevel = 0.0F;
+            String boltName = null;
+            for (BoltInfo bolt : boltsOnSameNode) {
+                if (bolt.getNameOfClassLoadedInside().equals("none")) {
+                    continue;
+                }
+                if (bolt.getMetrics().getOut_throughput() >= maxOutThroughPutPercentageAtBoltLevel) {
+                    maxOutThroughPutPercentageAtBoltLevel = bolt.getMetrics().getOut_throughput();
+                    boltName = bolt.getComponentName();
+                }
+            }
+            return boltName;
+        } else return null;
+    }
+
+    public List<BoltInfo> getBoltsRunningOnHost(String hostName) {
+        List<BoltInfo> boltsOnSameNode = new ArrayList<BoltInfo>();
+        for (Map.Entry<String, BoltInfo> entry : boltRecords.entrySet()) {
+            if (entry.getValue().getHostName().equals(hostName) && !entry.getValue().getComponentName().startsWith("s")) {
+                boltsOnSameNode.add(entry.getValue());
+            }
+        }
+        System.out.println("list of bolts on the specified host name" + boltsOnSameNode.toString());
+        return boltsOnSameNode;
+    }
+
     public List<String> findAllBoltNamesWithSameFunctionality(String boltName) {
+        System.out.println("going to find all bolt names which loaded same class");
         String nameOfClassLoadedInside = boltRecords.get(boltName).getNameOfClassLoadedInside();
+        System.out.println("nameOfClassLoadedInside= " + nameOfClassLoadedInside);
         if (!nameOfClassLoadedInside.equals("none")) {
             List<String> listOfBoltNamesWithSameFunctionality = new ArrayList<String>();
 
@@ -479,8 +577,31 @@ public class LoadBalancer {
                     listOfBoltNamesWithSameFunctionality.add(entry.getKey());
                 }
             }
+            System.out.println("listOfBoltNamesWithSameFunctionality is= " + listOfBoltNamesWithSameFunctionality);
             return listOfBoltNamesWithSameFunctionality;
         } else return null;
+    }
+
+    public void loadEdgeDeviceBandwidthInfo() {
+        bandwidthTable = new HashMap<String, BandwidthInfo>();
+        tableOfRemainingBandwidthOfVms = new HashMap<String, RemainingBandwidthInfoOfVm>();
+        try {
+            Resource resource = new ClassPathResource("edgeDeviceBandwidthInfo.csv");
+            InputStream inputStream = resource.getInputStream();
+            Reader in = new InputStreamReader(inputStream);
+            CSVParser csvParser = new CSVParser(in, CSVFormat.DEFAULT.withFirstRecordAsHeader());
+            for (CSVRecord record : csvParser) {
+                String vmName = record.get("vm");
+                float inBandwidth = Float.parseFloat(record.get("in_bandwidth"));
+                float outBandwidth = Float.parseFloat(record.get("out_bandwidth"));
+                bandwidthTable.put(vmName, new BandwidthInfo(inBandwidth, outBandwidth));
+                tableOfRemainingBandwidthOfVms.put(vmName, new RemainingBandwidthInfoOfVm());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Error reading CSV file", e);
+        }
+        System.out.println("bandwidth table = " + bandwidthTable.toString());
+        System.out.println("throughput table = " + tableOfRemainingBandwidthOfVms.toString());
     }
 
     public void loadLatencyFile() {
@@ -503,27 +624,35 @@ public class LoadBalancer {
 
     public boolean checkIfAReplicaMustBeRemoved(List<String> listOfReplicas) {
         if (listOfReplicas.size() > 1) {
-            double averageThroughputAfterRemovingAReplica = 0.0;
+            double averageInThroughputAfterRemovingAReplica = 0.0;
+            double averageOutThroughputAfterRemovingAReplica = 0.0;
             double averageCPUUsageAfterRemovingAReplica = 0.0;
             for (String replica : listOfReplicas) {
-                averageThroughputAfterRemovingAReplica += boltRecords.get(replica).getThroughput();
-                averageCPUUsageAfterRemovingAReplica += boltRecords.get(replica).getCpu();
+                averageInThroughputAfterRemovingAReplica += boltRecords.get(replica).getMetrics().getIn_throughput();
+                averageOutThroughputAfterRemovingAReplica += boltRecords.get(replica).getMetrics().getOut_throughput();
+
+                // averageCPUUsageAfterRemovingAReplica += boltRecords.get(replica).getCpu();
             }
             averageCPUUsageAfterRemovingAReplica = averageCPUUsageAfterRemovingAReplica / (listOfReplicas.size() - 1);
-            averageThroughputAfterRemovingAReplica = averageThroughputAfterRemovingAReplica / (listOfReplicas.size() - 1);
-            if (averageThroughputAfterRemovingAReplica <= applicationSettings.getThresholdForMinAverageThroughputOfAllReplicas() && averageCPUUsageAfterRemovingAReplica <= applicationSettings.getThresholdForMinAverageCpuUsageOfAllReplicas()) {
+            averageInThroughputAfterRemovingAReplica = averageInThroughputAfterRemovingAReplica / (listOfReplicas.size() - 1);
+            averageOutThroughputAfterRemovingAReplica = averageOutThroughputAfterRemovingAReplica / (listOfReplicas.size() - 1);
+            if ((averageInThroughputAfterRemovingAReplica <= applicationSettings.getThresholdForMinAverageThroughputOfAllReplicas()) &&
+                    (averageOutThroughputAfterRemovingAReplica <= applicationSettings.getThresholdForMinAverageThroughputOfAllReplicas())
+                //   && averageCPUUsageAfterRemovingAReplica <= applicationSettings.getThresholdForMinAverageCpuUsageOfAllReplicas()
+            ) {
                 return true;
             } else return false;
         } else return false;
     }
+
 
     public String identifyAReplicaToBeDeleted(List<String> listOfReplicas) {
         double minCPUUsage = 100.0;
         String nameOfReplicaToBeDeleted = null;
 
         for (String replica : listOfReplicas) {
-            if (replica.startsWith("gb") && boltRecords.get(replica).getCpu() <= minCPUUsage) {
-                minCPUUsage = boltRecords.get(replica).getCpu();
+            if (replica.startsWith("gb") && boltRecords.get(replica).getMetrics().getCpuAtBoltLevel() <= minCPUUsage) {
+                minCPUUsage = boltRecords.get(replica).getMetrics().getCpuAtBoltLevel();
                 nameOfReplicaToBeDeleted = boltRecords.get(replica).getComponentName();
             }
         }
@@ -585,38 +714,54 @@ public class LoadBalancer {
         return boltRecords.get(boltName).getNameOfClassLoadedInside();
     }
 
-    public boolean checkIfANewReplicaIsRequired_CPUFocused(String componentName) {
-        System.out.println("the cpu usage of the bolt which sent bottleNeck message is " + boltRecords.get(componentName).getCpu());
-        List<String> listOfBoltsWithSameFunctionality = new ArrayList<String>();
+    public boolean isAverageCPUAboveThreshold(String componentName) {
         double averageCPUOfReplicas = 0.0;
 
-        listOfBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(componentName);
+        List<String> listOfBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(componentName);
 
         for (String s : listOfBoltsWithSameFunctionality) {
-            averageCPUOfReplicas += boltRecords.get(s).getCpu();
+            averageCPUOfReplicas += boltRecords.get(s).getMetrics().getCpu();
         }
 
         averageCPUOfReplicas = averageCPUOfReplicas / listOfBoltsWithSameFunctionality.size();
+        System.out.println("averageCPUOfReplicas = " + averageCPUOfReplicas);
         if (averageCPUOfReplicas > applicationSettings.getThresholdForMaxAverageCpuUsageOfAllReplicas()) {
 
             return true;
         } else return false;
+
     }
 
-    public boolean checkIfANewReplicaIsRequired_throughputFocused(String componentName) {
-        System.out.println("the cpu usage of the bolt which sent bottleNeck message is " + boltRecords.get(componentName).getCpu());
+    public boolean isAverageRemainingInBandwidthBelowThreshold(String componentName) {
         List<String> listOfBoltsWithSameFunctionality = new ArrayList<String>();
-        double averageThroughputOfReplicas = 0.0;
+        double averageRemainingInBandwidthOfAllReplicas = 0.0;
 
         listOfBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(componentName);
         for (String s : listOfBoltsWithSameFunctionality) {
-            averageThroughputOfReplicas += boltRecords.get(s).getThroughput();
+            averageRemainingInBandwidthOfAllReplicas += boltRecords.get(s).getMetrics().getRemaining_in_bandwidth_of_vm_in_percentage();
         }
-        averageThroughputOfReplicas = averageThroughputOfReplicas / listOfBoltsWithSameFunctionality.size();
-        if (averageThroughputOfReplicas > applicationSettings.getThresholdForMaxAverageThroughputOfAllReplicas()) {
+        averageRemainingInBandwidthOfAllReplicas = averageRemainingInBandwidthOfAllReplicas / listOfBoltsWithSameFunctionality.size();
+        System.out.println("averageRemainingInBandwidthOfAllReplicas= " + averageRemainingInBandwidthOfAllReplicas);
+        if (averageRemainingInBandwidthOfAllReplicas <= applicationSettings.getReplicasMinAvgRemainingBandwidthThreshold()) {
             return true;
         } else return false;
     }
+
+    public boolean isAverageRemainingOutBandwidthBelowThreshold(String componentName) {
+        List<String> listOfBoltsWithSameFunctionality = new ArrayList<String>();
+        double averageRemainingOutBandwidthOfAllReplicas = 0.0;
+
+        listOfBoltsWithSameFunctionality = findAllBoltNamesWithSameFunctionality(componentName);
+        for (String s : listOfBoltsWithSameFunctionality) {
+            averageRemainingOutBandwidthOfAllReplicas += boltRecords.get(s).getMetrics().getRemaining_out_bandwidth_of_vm_in_percentage();
+        }
+        averageRemainingOutBandwidthOfAllReplicas = averageRemainingOutBandwidthOfAllReplicas / listOfBoltsWithSameFunctionality.size();
+        System.out.println("averageRemainingOutBandwidthOfAllReplicas= " + averageRemainingOutBandwidthOfAllReplicas);
+        if (averageRemainingOutBandwidthOfAllReplicas <= applicationSettings.getReplicasMinAvgRemainingBandwidthThreshold()) {
+            return true;
+        } else return false;
+    }
+
 
     public String findOriginalBoltNameRelatedToAComponentName(String componentName) {
         if (componentName.startsWith("gb_")) {
@@ -630,22 +775,31 @@ public class LoadBalancer {
     }
 
     public HashMap<String, CandidateEvaluationMetrics> identifyCandidatesForSpanningAReplica(String componentName) {
-        //  System.out.println("the bolt records are=" + boltRecords.toString());
-        //by considering only cpu and latency
+        System.out.println("Going to identify candidate for spanning a new replica");
+        System.out.println("the bolt records are=" + boltRecords.toString());
+        //by considering only cpu and latency and remain_in_bandwidth_of_vm
         // having concurrent bolts on a same device is ok
         String originalBoltName = findOriginalBoltNameRelatedToAComponentName(componentName);
-        //System.out.println("the original bolt name =" + originalBoltName);
+        System.out.println("the original bolt name =" + originalBoltName);
         List<String> upStreamBolts = findUpStreamBoltsByOriginalBoltName(originalBoltName);
-        //  System.out.println("the upStreamBolts =" + upStreamBolts.toString());
+        System.out.println("the upStreamBolts =" + upStreamBolts.toString());
         HashMap<String, CandidateEvaluationMetrics> listOfAllCandidates = new HashMap<String, CandidateEvaluationMetrics>();
         //the key is the candidate bolt name
+
         for (Map.Entry<String, BoltInfo> entry : boltRecords.entrySet()) {
-            if (entry.getKey().startsWith("gb_") && entry.getValue().getNameOfClassLoadedInside().equals("none") &&
-                    entry.getValue().getCpu() < applicationSettings.getMax_cpu_threshold() &&
-                    entry.getValue().getThroughput() < applicationSettings.getMax_throughput_threshold()) {
-                //     System.out.println("gb is found among bolt records");
+            System.out.println("entry.getValue().getComponentName()=" + entry.getValue().getComponentName());
+            System.out.println("entry.getValue().getNameOfClassLoadedInside()=" + entry.getValue().getNameOfClassLoadedInside());
+            System.out.println("entry.getValue().getMetrics().getCpu()=" + entry.getValue().getMetrics().getCpu());
+            System.out.println("entry.getValue().getMetrics().getRemaining_in_bandwidth_of_vm=" + entry.getValue().getMetrics().getRemaining_in_bandwidth_of_vm()
+            );
+
+            if (entry.getValue().getNameOfClassLoadedInside().equals("none") &&
+                    entry.getValue().getMetrics().getCpu() < applicationSettings.getMax_cpu_threshold()
+                    && entry.getValue().getMetrics().getRemaining_in_bandwidth_of_vm() > applicationSettings.getMin_remaining_bandwidth_threshold()
+            ) {
+
                 String candidateName = entry.getValue().getComponentName();
-                //    System.out.println("candidateName is " + candidateName);
+                System.out.println("candidate name=" + candidateName);
                 double averageLatencyToAllDownStreamBolts = 0.0;
                 double averageLatencyToAllUpStreamBolts = 0.0;
 
@@ -668,11 +822,12 @@ public class LoadBalancer {
                 CandidateEvaluationMetrics candidateEvaluationMetrics = new CandidateEvaluationMetrics();
                 candidateEvaluationMetrics.setAverageConnectionLatencyToAllUpStreamBolts(averageLatencyToAllUpStreamBolts);
                 candidateEvaluationMetrics.setAverageConnectionLatencyToAllDownStreamBolts(averageLatencyToAllDownStreamBolts);
-                candidateEvaluationMetrics.setCpuUsage(entry.getValue().getCpu());
+                candidateEvaluationMetrics.setCpuUsage(entry.getValue().getMetrics().getCpu());
+                candidateEvaluationMetrics.setRemainingInBandwidth(entry.getValue().getMetrics().getRemaining_in_bandwidth_of_vm());
                 listOfAllCandidates.put(candidateName, candidateEvaluationMetrics);
             }
         }
-        //  System.out.println("listOfAllCandidates is: " + listOfAllCandidates.toString());
+        System.out.println("listOfAllCandidates is: " + listOfAllCandidates.toString());
         return listOfAllCandidates;
     }
 
@@ -687,12 +842,23 @@ public class LoadBalancer {
 
         double maxCPUUsage = listOfAllCandidates.values().stream().mapToDouble(c -> c.cpuUsage).max().getAsDouble();
         //     System.out.println("maxCPUUsage is " + maxCPUUsage);
+        double maxRemainingBandwidth = listOfAllCandidates.values()
+                .stream()
+                .mapToDouble(c -> c.getRemainingInBandwidth())
+                .max()
+                .getAsDouble();
 
+        //  float maxRemainingBandwidthAsFloat = (float) maxRemainingBandwidth;
         for (CandidateEvaluationMetrics candidate : listOfAllCandidates.values()) {
             double latencySum = candidate.getAverageConnectionLatencyToAllDownStreamBolts() + candidate.getAverageConnectionLatencyToAllUpStreamBolts();
+
             double normalizedLatencySum = (maxLatencySum + 1) - latencySum;
             double normalizedCPUUsage = (maxCPUUsage + 1) - candidate.getCpuUsage();
-            candidate.setScore((normalizedLatencySum * applicationSettings.getWeight_for_latency()) + (normalizedCPUUsage * applicationSettings.getWeight_for_cpu()));
+            double normalizedRemainingBandwidth = candidate.getRemainingInBandwidth() / (maxRemainingBandwidth + 1);
+
+            candidate.setScore((normalizedLatencySum * applicationSettings.getWeight_for_latency()) +
+                    (normalizedRemainingBandwidth * applicationSettings.getWeight_for_in_bandwidth_of_target()) +
+                    normalizedCPUUsage * applicationSettings.getWeight_for_cpu());
         }
 
         CandidateEvaluationMetrics chosenCandidate = null;
@@ -846,6 +1012,142 @@ public class LoadBalancer {
                 listOfFreeServerPorts.remove(nameOfReplica);
             }
         }
+    }
+
+    public void storeVMBandwidthInfoInCSVFile() {
+        threadPool.submit(() -> {
+            File csvFile = new File("remaining_bandwidth.csv");
+            boolean isFileEmpty = csvFile.length() == 0;  // Check if file is empty
+
+            try (FileWriter writer = new FileWriter(csvFile, true)) { // Append mode enabled
+                // Write header only if the file doesn't exist
+                if (isFileEmpty) {
+                    writer.append("VM Name,Remaining In Bandwidth,Remaining Out Bandwidth,In Bandwidth Percentage,Out Bandwidth Percentage\n");
+                }
+
+                // Write data
+                for (String vmName : tableOfRemainingBandwidthOfVms.keySet()) {
+                    RemainingBandwidthInfoOfVm bandwidthInfo = tableOfRemainingBandwidthOfVms.get(vmName);
+                    writer.append(vmName)
+                            .append(",")
+                            .append(String.valueOf(bandwidthInfo.getRemainingInBandwidth()))
+                            .append(",")
+                            .append(String.valueOf(bandwidthInfo.getRemainingOutBandwidth()))
+                            .append(",")
+                            .append(String.valueOf(bandwidthInfo.getRemainingInBandwidthPercentage()))
+                            .append(",")
+                            .append(String.valueOf(bandwidthInfo.getRemainingOutBandwidthPercentage()))
+                            .append("\n");
+                }
+                System.out.println("table of bandwidth info has been saved to remaining_bandwidth.csv");
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+
+    }
+
+    public void calculateRemainingBandwidthOfVms(int initialDelay, int period) {
+        ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+        Runnable task = new Runnable() {
+            public List<String> listOfVmsWithInBandwidthBottleNeck = new ArrayList<>();
+            public List<String> listOfVmsWithOutBandwidthBottleNeck = new ArrayList<>();
+            float vmOutBandwidth;
+            float vmInBandwidth;
+
+            @Override
+            public void run() {
+                //     System.out.println("BIBBBBB, going to calculate remaining bandwidth of Vms");
+                //     if(listOfVmsWithInBandwidthBottleNeck!=null){
+                listOfVmsWithInBandwidthBottleNeck.clear();
+                //    }
+                //   if(listOfVmsWithOutBandwidthBottleNeck!=null){
+                listOfVmsWithOutBandwidthBottleNeck.clear();
+                //   }
+
+                for (String vmName : tableOfRemainingBandwidthOfVms.keySet()) {
+                    // System.out.println("BIBBBBB, in tableOfRemainingBandwidthOfVms, vm name ="+vmName);
+                    float in_throughput = 0;
+                    float out_throughput = 0;
+                    float currentRemainingInBandwidth = 0;
+                    float currentRemainingOutBandwidth = 0;
+                    for (BoltInfo infoOfOperator : boltRecords.values()) {
+                        if (infoOfOperator.getHostName().equals(vmName)) {
+                            //  System.out.println("BIBBBBB, boltName ="+infoOfOperator.getComponentName());
+                            //  System.out.println("BIBBBBB, in_th ="+infoOfOperator.getMetrics().getIn_throughput());
+                            //  System.out.println("BIBBBBB, out_th ="+infoOfOperator.getMetrics().getOut_throughput());
+
+                            in_throughput += infoOfOperator.getMetrics().getIn_throughput();
+                            out_throughput += infoOfOperator.getMetrics().getOut_throughput();
+                        }
+                    }
+                    // System.out.println("BIBBBBB, overall in_throughput=" +in_throughput+"vm name= "+vmName);
+                    // System.out.println("BIBBBBB, overall out_throughput=" +out_throughput+"vm name= "+vmName);
+
+                    vmOutBandwidth = bandwidthTable.get(vmName).getOutBandwidth();
+                    vmInBandwidth = bandwidthTable.get(vmName).getInBandwidth();
+                    //should be performed after all vms got their bandwidth updated
+                    if (in_throughput / vmInBandwidth >= applicationSettings.getMax_throughput_threshold()) {
+                        listOfVmsWithInBandwidthBottleNeck.add(vmName);
+                    }
+                    if (out_throughput / vmOutBandwidth >= applicationSettings.getMax_throughput_threshold()) {
+                        listOfVmsWithOutBandwidthBottleNeck.clear();
+                    }
+                    currentRemainingOutBandwidth = vmOutBandwidth - out_throughput;
+                    currentRemainingInBandwidth = vmInBandwidth - in_throughput;
+
+                    if (currentRemainingOutBandwidth < 0) {
+                        currentRemainingOutBandwidth = 0;
+                    }
+                    if (currentRemainingInBandwidth < 0) {
+                        currentRemainingInBandwidth = 0;
+                    }
+                    tableOfRemainingBandwidthOfVms.get(vmName).setRemainingOutBandwidth(currentRemainingOutBandwidth);
+                    tableOfRemainingBandwidthOfVms.get(vmName).setRemainingInBandwidth(currentRemainingInBandwidth);
+                    if (currentRemainingInBandwidth != 0.0) {
+                        tableOfRemainingBandwidthOfVms.get(vmName).setRemainingInBandwidthPercentage((Math.round((currentRemainingInBandwidth / vmInBandwidth) * metricPrecision) / (float) metricPrecision));
+                    }
+                    if (currentRemainingOutBandwidth != 0.0) {
+                        tableOfRemainingBandwidthOfVms.get(vmName).setRemainingOutBandwidthPercentage((Math.round((currentRemainingOutBandwidth / vmOutBandwidth) * metricPrecision) / (float) metricPrecision));
+                    }
+
+                }
+                // System.out.println("BIBBBBB, tableOfRemainingBandwidthOfVms: " + tableOfRemainingBandwidthOfVms.toString());
+
+                //going to update bolt records
+                for (BoltInfo infoOfOperator : boltRecords.values()) {
+                    infoOfOperator.getMetrics().setRemaining_in_bandwidth_of_vm(
+                            tableOfRemainingBandwidthOfVms.get(infoOfOperator.getHostName()).getRemainingInBandwidth());
+                    infoOfOperator.getMetrics().setRemaining_out_bandwidth_of_vm(
+                            tableOfRemainingBandwidthOfVms.get(infoOfOperator.getHostName()).getRemainingOutBandwidth());
+
+                    infoOfOperator.getMetrics().setRemaining_in_bandwidth_of_vm_in_percentage(
+                            tableOfRemainingBandwidthOfVms.get(infoOfOperator.getHostName()).getRemainingInBandwidthPercentage());
+                    infoOfOperator.getMetrics().setRemaining_out_bandwidth_of_vm_in_percentage(
+                            tableOfRemainingBandwidthOfVms.get(infoOfOperator.getHostName()).getRemainingOutBandwidthPercentage());
+
+                }
+                System.out.println("BIBBBBB, now BoltRecords are: " + boltRecords.toString());
+
+                //going to publish MQTT message
+                for (Map.Entry<String, RemainingBandwidthInfoOfVm> a : tableOfRemainingBandwidthOfVms.entrySet()) {
+                    publishAMessage(a.getKey() + "/remaining_in_bandwidth_of_vm",
+                            String.valueOf(a.getValue().getRemainingInBandwidth()) + "/" + String.valueOf(a.getValue().getRemainingInBandwidthPercentage()));
+                    publishAMessage(a.getKey() + "/remaining_out_bandwidth_of_vm",
+                            String.valueOf(a.getValue().getRemainingOutBandwidth()) + "/" + String.valueOf(a.getValue().getRemainingOutBandwidthPercentage()));
+                }
+                for (String vmName : listOfVmsWithOutBandwidthBottleNeck) {
+                    manageReplicaCreationBasedOnRemainingOutBandwidth(vmName);
+                }
+                for (String vmName : listOfVmsWithInBandwidthBottleNeck) {
+                    manageReplicaCreationBasedOnRemainingInBandwidth(vmName);
+                }
+                storeVMBandwidthInfoInCSVFile();
+            }
+        };
+
+        executorService.scheduleAtFixedRate(task, initialDelay, period, TimeUnit.SECONDS);
     }
 }
 

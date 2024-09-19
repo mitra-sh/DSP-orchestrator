@@ -22,6 +22,7 @@ public class LoadBalancerDemoApplication {
         lb = new LoadBalancer();
         lb.connectToBroker();
         lb.subscribeToATopic("+/metrics");
+        lb.subscribeToATopic("+/initialInfo");
         lb.subscribeToATopic("+/topologyUpdate");
         lb.subscribeToATopic("bottleNeck/+");
         lb.subscribeToATopic("applicationSettings");
@@ -30,9 +31,7 @@ public class LoadBalancerDemoApplication {
         lb.subscribeToATopic("underUtilization");
         lb.subscribeToProcessingTime_start("+/processingTime/start");
         lb.subscribeToProcessingTime_end("+/processingTime/end");
-
-
-
+        lb.calculateRemainingBandwidthOfVms(180,60);
     }
 
     @RequestMapping(value = "/manualCommandToRemoveAReplica")
@@ -54,8 +53,8 @@ public class LoadBalancerDemoApplication {
         BoltInfoTestRequest request = boltInfoTestRequest;
         System.out.println("the request is= " + request.toString());
 
-        lb.boltRecords.get(request.name).setThroughput(request.throughput);
-        lb.boltRecords.get(request.name).setCpu(request.cpu);
+        lb.boltRecords.get(request.name).getMetrics().setIn_throughput((float) request.throughput);
+        lb.boltRecords.get(request.name).getMetrics().setCpu(request.cpu);
         System.out.println("the boltRecords is= " + lb.boltRecords.toString());
     }
 

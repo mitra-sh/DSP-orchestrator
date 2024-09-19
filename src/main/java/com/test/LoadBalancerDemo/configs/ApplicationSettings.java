@@ -2,47 +2,73 @@ package com.test.LoadBalancerDemo.configs;
 
 import java.io.Serializable;
 
+
+import java.io.Serializable;
+
 public class ApplicationSettings implements Serializable {
     public String mood;
     public int metric_collection_interval_in_second;
-    //done
-    public double max_acceptable_latency_in_second;
-    //done
     public double weight_for_latency;
-    public double weight_for_throughput;
+    public float weight_for_in_bandwidth_of_target;
     public double weight_for_cpu;
     public double min_cpu_threshold;
     public double max_cpu_threshold;
+    public float min_remaining_bandwidth_threshold;
     public double max_throughput_threshold;
     public double min_throughput_threshold;
     public double max_cpu_threshold_for_localAdaptation;
     public double max_throughput_threshold_for_localAdaptation;
-
-    public double thresholdForMaxAverageCpuUsageOfAllReplicas ;
-    public double thresholdForMaxAverageThroughputOfAllReplicas ;
-    public double thresholdForMinAverageThroughputOfAllReplicas ;
-    public double thresholdForMinAverageCpuUsageOfAllReplicas ;
+    public float min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation;
+    public double thresholdForMaxAverageCpuUsageOfAllReplicas;
+    public double replicasMinAvgRemainingBandwidthThreshold;
+    public double thresholdForMinAverageThroughputOfAllReplicas;
+    public double thresholdForMinAverageCpuUsageOfAllReplicas;
 
     @Override
     public String toString() {
         return "ApplicationSettings{" +
                 "mood='" + mood + '\'' +
                 ", metric_collection_interval_in_second=" + metric_collection_interval_in_second +
-                ", max_acceptable_latency_in_second=" + max_acceptable_latency_in_second +
                 ", weight_for_latency=" + weight_for_latency +
-                ", weight_for_throughput=" + weight_for_throughput +
+                ", weight_for_in_bandwidth_of_target=" + weight_for_in_bandwidth_of_target +
                 ", weight_for_cpu=" + weight_for_cpu +
                 ", min_cpu_threshold=" + min_cpu_threshold +
                 ", max_cpu_threshold=" + max_cpu_threshold +
+                ", min_remaining_bandwidth_threshold=" + min_remaining_bandwidth_threshold +
                 ", max_throughput_threshold=" + max_throughput_threshold +
                 ", min_throughput_threshold=" + min_throughput_threshold +
                 ", max_cpu_threshold_for_localAdaptation=" + max_cpu_threshold_for_localAdaptation +
                 ", max_throughput_threshold_for_localAdaptation=" + max_throughput_threshold_for_localAdaptation +
+                ", min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation=" + min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation +
                 ", thresholdForMaxAverageCpuUsageOfAllReplicas=" + thresholdForMaxAverageCpuUsageOfAllReplicas +
-                ", thresholdForMaxAverageThroughputOfAllReplicas=" + thresholdForMaxAverageThroughputOfAllReplicas +
+                ", replicasMinAvgRemainingBandwidthThreshold=" + replicasMinAvgRemainingBandwidthThreshold +
                 ", thresholdForMinAverageThroughputOfAllReplicas=" + thresholdForMinAverageThroughputOfAllReplicas +
                 ", thresholdForMinAverageCpuUsageOfAllReplicas=" + thresholdForMinAverageCpuUsageOfAllReplicas +
                 '}';
+    }
+
+    public float getMin_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation() {
+        return min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation;
+    }
+
+    public void setMin_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation(float min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation) {
+        this.min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation = min_remaining_in_bandwidth_threshold_in_percentage_for_localAdaptation;
+    }
+
+    public float getMin_remaining_bandwidth_threshold() {
+        return min_remaining_bandwidth_threshold;
+    }
+
+    public void setMin_remaining_bandwidth_threshold(float min_remaining_bandwidth_threshold) {
+        this.min_remaining_bandwidth_threshold = min_remaining_bandwidth_threshold;
+    }
+
+    public float getWeight_for_in_bandwidth_of_target() {
+        return weight_for_in_bandwidth_of_target;
+    }
+
+    public void setWeight_for_in_bandwidth_of_target(float weight_for_in_bandwidth_of_target) {
+        this.weight_for_in_bandwidth_of_target = weight_for_in_bandwidth_of_target;
     }
 
     public double getMax_cpu_threshold_for_localAdaptation() {
@@ -69,12 +95,12 @@ public class ApplicationSettings implements Serializable {
         this.thresholdForMaxAverageCpuUsageOfAllReplicas = thresholdForMaxAverageCpuUsageOfAllReplicas;
     }
 
-    public double getThresholdForMaxAverageThroughputOfAllReplicas() {
-        return thresholdForMaxAverageThroughputOfAllReplicas;
+    public double getReplicasMinAvgRemainingBandwidthThreshold() {
+        return replicasMinAvgRemainingBandwidthThreshold;
     }
 
-    public void setThresholdForMaxAverageThroughputOfAllReplicas(double thresholdForMaxAverageThroughputOfAllReplicas) {
-        this.thresholdForMaxAverageThroughputOfAllReplicas = thresholdForMaxAverageThroughputOfAllReplicas;
+    public void setReplicasMinAvgRemainingBandwidthThreshold(double replicasMinAvgRemainingBandwidthThreshold) {
+        this.replicasMinAvgRemainingBandwidthThreshold = replicasMinAvgRemainingBandwidthThreshold;
     }
 
     public double getThresholdForMinAverageThroughputOfAllReplicas() {
@@ -126,12 +152,6 @@ public class ApplicationSettings implements Serializable {
         this.max_cpu_threshold = max_cpu_threshold;
     }
 
-    public double getMax_acceptable_latency_in_second() {
-        return max_acceptable_latency_in_second;
-    }
-    public void setMax_acceptable_latency_in_second(double max_acceptable_latency_in_second) {
-        this.max_acceptable_latency_in_second = max_acceptable_latency_in_second;
-    }
     public String getMood() {
         return mood;
     }
@@ -157,13 +177,6 @@ public class ApplicationSettings implements Serializable {
         this.weight_for_latency = weight_for_latency;
     }
 
-    public double getWeight_for_throughput() {
-        return weight_for_throughput;
-    }
-
-    public void setWeight_for_throughput(double weight_for_throughput) {
-        this.weight_for_throughput = weight_for_throughput;
-    }
 
     public double getWeight_for_cpu() {
         return weight_for_cpu;
@@ -172,6 +185,5 @@ public class ApplicationSettings implements Serializable {
     public void setWeight_for_cpu(double weight_for_cpu) {
         this.weight_for_cpu = weight_for_cpu;
     }
-
 
 }

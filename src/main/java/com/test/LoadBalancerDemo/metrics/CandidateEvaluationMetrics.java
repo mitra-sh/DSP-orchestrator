@@ -4,8 +4,8 @@ public class CandidateEvaluationMetrics {
     public double cpuUsage;
     public double averageConnectionLatencyToAllUpStreamBolts;
     public double averageConnectionLatencyToAllDownStreamBolts;
+    public float remainingInBandwidth;
     public double score;
-
 
     @Override
     public String toString() {
@@ -13,8 +13,17 @@ public class CandidateEvaluationMetrics {
                 "cpuUsage=" + cpuUsage +
                 ", averageConnectionLatencyToAllUpStreamBolts=" + averageConnectionLatencyToAllUpStreamBolts +
                 ", averageConnectionLatencyToAllDownStreamBolts=" + averageConnectionLatencyToAllDownStreamBolts +
+                ", remainingInBandwidth=" + remainingInBandwidth +
                 ", score=" + score +
                 '}';
+    }
+
+    public float getRemainingInBandwidth() {
+        return remainingInBandwidth;
+    }
+
+    public void setRemainingInBandwidth(float remainingInBandwidth) {
+        this.remainingInBandwidth = remainingInBandwidth;
     }
 
     public double getCpuUsage() {

@@ -8,16 +8,15 @@ import java.util.HashMap;
 public class BoltInfo {
     public String componentName;
     public String nameOfClassLoadedInside;
-    public String supervisorNameForTCPConnection="none";
-    public String hostName="none";
-    public double cpu = 0;
-    public float cpuAtBoltLevel= 0.0F;
-    public double throughput = 0;
-    public int taskId=0;
+    public String supervisorNameForTCPConnection = "none";
+    public String hostName = "none";
+    public Metrics metrics;
+    public int taskId = 0;
     //it varies for different upstream bolts
-    public int serverPort=0;
-
-
+    public int serverPort = 0;
+    public BoltInfo() {
+        this.metrics = new Metrics();
+    }
     @Override
     public String toString() {
         return "BoltInfo{" +
@@ -25,21 +24,21 @@ public class BoltInfo {
                 ", nameOfClassLoadedInside='" + nameOfClassLoadedInside + '\'' +
                 ", supervisorNameForTCPConnection='" + supervisorNameForTCPConnection + '\'' +
                 ", hostName='" + hostName + '\'' +
-                ", cpu=" + cpu +
-                ", cpuAtBoltLevel=" + cpuAtBoltLevel +
-                ", throughput=" + throughput +
                 ", taskId=" + taskId +
                 ", serverPort=" + serverPort +
+                ", metrics=" + metrics +
                 '}';
     }
 
-    public float getCpuAtBoltLevel() {
-        return cpuAtBoltLevel;
+
+    public Metrics getMetrics() {
+        return metrics;
     }
 
-    public void setCpuAtBoltLevel(float cpuAtBoltLevel) {
-        this.cpuAtBoltLevel = cpuAtBoltLevel;
+    public void setMetrics(Metrics metrics) {
+        this.metrics = metrics;
     }
+
     public String getSupervisorNameForTCPConnection() {
         return supervisorNameForTCPConnection;
     }
@@ -80,21 +79,6 @@ public class BoltInfo {
         this.nameOfClassLoadedInside = nameOfClassLoadedInside;
     }
 
-    public double getCpu() {
-        return cpu;
-    }
-
-    public void setCpu(double cpu) {
-        this.cpu = cpu;
-    }
-
-    public double getThroughput() {
-        return throughput;
-    }
-
-    public void setThroughput(double throughput) {
-        this.throughput = throughput;
-    }
 
     public String getComponentName() {
         return componentName;
@@ -103,6 +87,4 @@ public class BoltInfo {
     public void setComponentName(String componentName) {
         this.componentName = componentName;
     }
-
-
 }

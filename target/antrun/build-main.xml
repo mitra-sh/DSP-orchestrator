@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project name="maven-antrun-" default="main"  >
+<target name="main">
+  <exec executable="sshpass">
+    <arg value="-p"/>
+    <arg value="09371972490Msh"/>
+    <arg value="ssh"/>
+    <arg value="-o"/>
+    <arg value="StrictHostKeyChecking=no"/>
+    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213"/>
+    <arg value="rm"/>
+    <arg value="-r"/>
+    <arg value="/tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
+  </exec>
+</target>
+</project>

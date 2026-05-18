@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -13,21 +14,23 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>LoadBalancerDemo</name>
     <description>Demo project for load balancer</description>
+
     <properties>
         <java.version>11</java.version>
         <repackage.classifier/>
         <spring-native.version>0.12.1</spring-native.version>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
     </properties>
+    <!-- <distributionManagement>
+         <repository>
+             <id>vm-repo</id>
+             <url>scp://192.168.122.98:/home/as00750/</url>
+         </repository>
+     </distributionManagement> -->
+
+
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.experimental</groupId>
-            <artifactId>spring-native</artifactId>
-            <version>${spring-native.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.eclipse.paho</groupId>
             <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
@@ -76,43 +79,12 @@
             <artifactId>docker-java</artifactId>
             <version>3.3.4</version> <!-- Check for the latest version -->
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
     </dependencies>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <classifier>${repackage.classifier}</classifier>
-                    <image>
-                        <builder>paketobuildpacks/builder:tiny</builder>
-                        <env>
-                            <BP_NATIVE_IMAGE>true</BP_NATIVE_IMAGE>
-                        </env>
-                    </image>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.springframework.experimental</groupId>
-                <artifactId>spring-aot-maven-plugin</artifactId>
-                <version>${spring-native.version}</version>
-                <executions>
-                    <execution>
-                        <id>test-generate</id>
-                        <goals>
-                            <goal>test-generate</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>generate</id>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+
     <repositories>
         <repository>
             <id>spring-releases</id>
@@ -137,48 +109,130 @@
             </snapshots>
         </pluginRepository>
     </pluginRepositories>
+    <build>
+        <!-- <extensions>
+             <extension>
+                 <groupId>org.apache.maven.wagon</groupId>
+                 <artifactId>wagon-ssh</artifactId>
+                 <version>3.4.3</version>
+             </extension>
+         </extensions>-->
+        <plugins>
+            <!-- Spring Boot Maven Plugin -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>1.8</version>
+                <executions>
+                    <execution>
+                        <id>copy-to-intermediate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="sshpass">
+                                    <arg value="-p"/>
+                                    <arg value="09371972490Msh"/>
+                                    <arg value="scp"/>
+                                    <arg value="-o"/>
+                                    <arg value="StrictHostKeyChecking=no"/>
 
-    <profiles>
-        <profile>
-            <id>native</id>
-            <properties>
-                <repackage.classifier>exec</repackage.classifier>
-                <native-buildtools.version>0.9.13</native-buildtools.version>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>org.junit.platform</groupId>
-                    <artifactId>junit-platform-launcher</artifactId>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.graalvm.buildtools</groupId>
-                        <artifactId>native-maven-plugin</artifactId>
-                        <version>${native-buildtools.version}</version>
-                        <extensions>true</extensions>
-                        <executions>
-                            <execution>
-                                <id>test-native</id>
-                                <phase>test</phase>
-                                <goals>
-                                    <goal>test</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>build-native</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>build</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
+                                    <arg value="/home/as00750/IdeaProjects/LoadBalancerDemo/target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213:/tmp/"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+
+                    <execution>
+                        <id>copy-to-vm</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="sshpass">
+                                    <arg value="-p"/>
+                                    <arg value="09371972490Msh"/>
+                                    <arg value="ssh"/>
+                                    <arg value="-o"/>
+                                    <arg value="StrictHostKeyChecking=no"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213"/>
+                                    <arg value="sshpass"/>
+                                    <arg value="-p"/>
+                                    <arg value="ChangeMeNow"/>
+                                    <arg value="scp"/>
+                                    <arg value="/tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
+                                    <arg value="as00750@192.168.122.98:/home/as00750"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>remove-jar-from-tmp</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="sshpass">
+                                    <arg value="-p"/>
+                                    <arg value="09371972490Msh"/>
+                                    <arg value="ssh"/>
+                                    <arg value="-o"/>
+                                    <arg value="StrictHostKeyChecking=no"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213"/>
+                                    <!-- Path to your JAR file -->
+                                    <arg value="rm"/>
+                                    <arg value="-r"/>
+                                    <arg value="/tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+                <!-- <executions>
+                     <execution>
+                         <phase>package</phase>
+                         <goals>
+                             <goal>run</goal>
+                         </goals>
+                         <configuration>
+                             <tasks>
+                                 <scp todir="user@server:/path/to/target/directory">
+                                     <fileset dir="${project.build.directory}">
+                                         <include name="${project.build.finalName}.jar"/>
+                                     </fileset>
+                                 </scp>
+                             </tasks>
+                             <target>
+                                 <exec executable="sshpass">
+                                     <arg line="-p '09371972490Msh' scp -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar 10.178.8.213:/tmp/"/>
+                                 </exec>
+
+                                 <exec executable="sshpass">
+                                     <arg line="-p '09371972490Msh' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' 10.178.8.213 'sshpass -p &quot;ChangeMeNow&quot; scp -o StrictHostKeyChecking=no /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar as00750@192.168.122.98:/home/as00750/'"/>
+                                 </exec>
+
+                                 <exec executable="sshpass">
+                                     <arg line="-p '09371972490Msh' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' 10.178.8.213 'rm /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar'"/>
+                                 </exec>
+
+                             </target>
+                         </configuration>
+                     </execution>
+                 </executions>-->
+            </plugin>
+        </plugins>
+    </build>
+
 
 </project>

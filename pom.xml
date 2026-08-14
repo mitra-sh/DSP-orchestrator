@@ -165,7 +165,7 @@
                                     <arg value="VMPassword"/>
                                     <arg value="scp"/>
                                     <arg value="/tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
-                                    <arg value="as00750@192.168.122.98:/home/as00750"/>
+                                    <arg value="as00750@serverIP:/home/as00750"/>
                                 </exec>
                             </target>
                         </configuration>
@@ -180,7 +180,7 @@
                             <target>
                                 <exec executable="sshpass">
                                     <arg value="-p"/>
-                                    <arg value="09371972490Msh"/>
+                                    <arg value="rootPassword"/>
                                     <arg value="ssh"/>
                                     <arg value="-o"/>
                                     <arg value="StrictHostKeyChecking=no"/>

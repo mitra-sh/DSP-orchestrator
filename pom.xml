@@ -22,12 +22,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
     </properties>
-    <!-- <distributionManagement>
-         <repository>
-             <id>vm-repo</id>
-             <url>scp://192.168.122.98:/home/as00750/</url>
-         </repository>
-     </distributionManagement> -->
+
 
 
     <dependencies>
@@ -215,11 +210,11 @@
                              </tasks>
                              <target>
                                  <exec executable="sshpass">
-                                     <arg line="-p 'rootPassword' scp -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar 10.178.8.213:/tmp/"/>
+                                     <arg line="-p 'rootPassword' scp -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar VMIP:/tmp/"/>
                                  </exec>
 
                                  <exec executable="sshpass">
-                                     <arg line="-p 'rootPassword' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' VMIP 'sshpass -p &quot;VMPassword&quot; scp -o StrictHostKeyChecking=no /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar as00750@192.168.122.98:/home/as00750/'"/>
+                                     <arg line="-p 'rootPassword' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' VMIP 'sshpass -p &quot;VMPassword&quot; scp -o StrictHostKeyChecking=no /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar as00750@serverIP:/home/as00750/'"/>
                                  </exec>
 
                                  <exec executable="sshpass">

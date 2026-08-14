@@ -138,13 +138,13 @@
                             <target>
                                 <exec executable="sshpass">
                                     <arg value="-p"/>
-                                    <arg value="09371972490Msh"/>
+                                    <arg value="rootPassword"/>
                                     <arg value="scp"/>
                                     <arg value="-o"/>
                                     <arg value="StrictHostKeyChecking=no"/>
 
                                     <arg value="/home/as00750/IdeaProjects/LoadBalancerDemo/target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
-                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213:/tmp/"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@VMIP:/tmp/"/>
                                 </exec>
                             </target>
                         </configuration>
@@ -164,10 +164,10 @@
                                     <arg value="ssh"/>
                                     <arg value="-o"/>
                                     <arg value="StrictHostKeyChecking=no"/>
-                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@VMIP"/>
                                     <arg value="sshpass"/>
                                     <arg value="-p"/>
-                                    <arg value="ChangeMeNow"/>
+                                    <arg value="VMPassword"/>
                                     <arg value="scp"/>
                                     <arg value="/tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar"/>
                                     <arg value="as00750@192.168.122.98:/home/as00750"/>
@@ -189,7 +189,7 @@
                                     <arg value="ssh"/>
                                     <arg value="-o"/>
                                     <arg value="StrictHostKeyChecking=no"/>
-                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@10.178.8.213"/>
+                                    <arg value="mitra.shahabadi.1@ens.etsmtl.ca@VMIP"/>
                                     <!-- Path to your JAR file -->
                                     <arg value="rm"/>
                                     <arg value="-r"/>
@@ -215,15 +215,15 @@
                              </tasks>
                              <target>
                                  <exec executable="sshpass">
-                                     <arg line="-p '09371972490Msh' scp -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar 10.178.8.213:/tmp/"/>
+                                     <arg line="-p 'rootPassword' scp -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' target/LoadBalancerDemo-0.0.1-SNAPSHOT.jar 10.178.8.213:/tmp/"/>
                                  </exec>
 
                                  <exec executable="sshpass">
-                                     <arg line="-p '09371972490Msh' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' 10.178.8.213 'sshpass -p &quot;ChangeMeNow&quot; scp -o StrictHostKeyChecking=no /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar as00750@192.168.122.98:/home/as00750/'"/>
+                                     <arg line="-p 'rootPassword' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' VMIP 'sshpass -p &quot;VMPassword&quot; scp -o StrictHostKeyChecking=no /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar as00750@192.168.122.98:/home/as00750/'"/>
                                  </exec>
 
                                  <exec executable="sshpass">
-                                     <arg line="-p '09371972490Msh' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' 10.178.8.213 'rm /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar'"/>
+                                     <arg line="-p 'rootPassword' ssh -o StrictHostKeyChecking=no -l 'mitra.shahabadi.1@ens.etsmtl.ca' VMIP 'rm /tmp/LoadBalancerDemo-0.0.1-SNAPSHOT.jar'"/>
                                  </exec>
 
                              </target>

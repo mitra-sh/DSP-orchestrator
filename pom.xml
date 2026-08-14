@@ -155,7 +155,7 @@
                             <target>
                                 <exec executable="sshpass">
                                     <arg value="-p"/>
-                                    <arg value="09371972490Msh"/>
+                                    <arg value="rootPassword"/>
                                     <arg value="ssh"/>
                                     <arg value="-o"/>
                                     <arg value="StrictHostKeyChecking=no"/>
